@@ -1,0 +1,16 @@
+{
+  "000000000000": {
+    "image_path": "0_random_140/000000000000.jpg",
+    "editing_instruction": "Make the frame of the bike rusty",
+    "editing_type_id": "0",
+    "processing_time": 50.75377917289734,
+    "output_path": "output/sam3-sd-inpaint/annotation_images/0_random_140/000000000000.jpg"
+  },
+  "000000000001": {
+    "image_path": "0_random_140/000000000001.jpg",
+    "editing_instruction": "Change the cake shape to square",
+    "editing_type_id": "0",
+    "processing_time": 68.46490001678467,
+    "output_path": "output/sam3-sd-inpaint/annotation_images/0_random_140/000000000001.jpg"
+  }
+}
