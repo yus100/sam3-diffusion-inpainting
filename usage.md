@@ -76,10 +76,11 @@ python process_piebench.py \
     --edit_category_list 0 1 2
 ```
 
-### Use ground truth masks (no SAM 3)
+### Use ground truth masks for baseline comparison (optional)
 
 ```bash
-# Use PIE-Bench's provided masks instead of SAM 3
+# Use PIE-Bench's provided masks instead of SAM 3 (for baseline comparison only)
+# Note: GT masks are primarily for evaluation, not for editing
 python process_piebench.py \
     --data_dir ./data \
     --output_dir ./output \
@@ -115,8 +116,8 @@ python process_piebench.py \
     --output_dir ./output \                # Output directory
     
     # Method options
-    --use_sam3 \                           # Use SAM 3 (default)
-    --use_gt_mask \                        # Use PIE-Bench GT masks instead
+    --use_sam3 \                           # Use SAM 3 for segmentation (default)
+    --use_gt_mask \                        # Use PIE-Bench GT masks for editing
     
     # Model options
     --sam3_checkpoint models/sam3.pt \     # SAM 3 model path
@@ -179,32 +180,35 @@ For each image:
 
 1. **Load annotation** from `mapping_file.json`
 2. **Get mask:**
-   - If `--use_gt_mask`: Use PIE-Bench's ground truth mask
-   - Else: Use SAM 3 to segment object (extracted from `blended_word`)
+   - **Default (recommended):** Use SAM 3 to segment object (extracted from `blended_word`)
+   - **Optional (baseline only):** Use `--use_gt_mask` to use PIE-Bench's ground truth mask for comparison
 3. **Inpaint** using `editing_instruction` as prompt
 4. **Save** result maintaining directory structure
+
+**Note:** Ground truth masks in PIE-Bench are primarily used for **evaluation** (to measure how well unedited regions are preserved), not for the editing process itself. The default workflow uses SAM 3 for segmentation.
 
 ---
 
 ## SAM 3 vs Ground Truth Masks
 
-### SAM 3 Mode (default)
+### SAM 3 Mode (default and recommended)
 ```bash
 python process_piebench.py --data_dir ./data --output_dir ./output
 ```
 
-- **Pros:** Tests your SAM 3 segmentation quality
-- **Cons:** Segmentation may differ from ground truth
+- **Purpose:** Uses SAM 3 for text-based segmentation during editing
+- **This is the intended workflow** - SAM 3 segments objects based on text prompts
 
-### Ground Truth Mask Mode
+### Ground Truth Mask Mode (baseline comparison only)
 ```bash
 python process_piebench.py --data_dir ./data --output_dir ./output --use_gt_mask
 ```
 
-- **Pros:** Uses exact masks from PIE-Bench (fair comparison with other methods)
-- **Cons:** Not testing SAM 3 segmentation
+- **Purpose:** Uses PIE-Bench's ground truth masks for editing (baseline comparison)
+- **Note:** GT masks are primarily intended for **evaluation**, not for editing
+- **Use case:** Only if you want to compare results using GT masks vs SAM 3 masks
 
-**Recommendation:** Run both modes to compare!
+**Important:** Ground truth masks in PIE-Bench are used by the evaluation script to compute metrics (e.g., `psnr_unedit_part`, `lpips_unedit_part`) that measure how well unedited regions are preserved. They are not meant to be used during the editing process itself.
 
 ---
 
@@ -237,8 +241,9 @@ python process_piebench.py \
     --save_masks
 ```
 
-### Use GT masks (baseline)
+### Use GT masks for baseline comparison (optional)
 ```bash
+# Note: GT masks are for evaluation, not editing. This is only for comparison.
 python process_piebench.py \
     --data_dir ./data \
     --output_dir ./output_gt \
@@ -259,11 +264,14 @@ python evaluation/evaluate.py \
     --result_path results.csv
 ```
 
-Metrics include:
+**Note:** The evaluation script uses **ground truth masks** from PIE-Bench annotations to compute metrics. These masks define which regions were edited and which should remain unchanged, allowing metrics like:
 - Structure distance
 - CLIP similarity
-- PSNR/LPIPS/SSIM (unedited parts)
+- PSNR/LPIPS/SSIM on unedited parts (using GT masks to identify unedited regions)
+- PSNR/LPIPS/SSIM on edited parts (using GT masks to identify edited regions)
 - And more...
+
+The GT masks are essential for evaluation because they tell the metrics calculator which parts of the image should be compared.
 
 ---
 
@@ -295,7 +303,7 @@ Metrics include:
 **Quality:**
 - Use `--steps 100` for best results
 - Use `--seed 42` for reproducibility
-- Compare `--use_sam3` vs `--use_gt_mask`
+- Use SAM 3 for segmentation (default) - GT masks are for evaluation only
 
 **Memory:**
 - Process in batches using `--edit_category_list`
@@ -323,8 +331,9 @@ Original PIE-Bench uses:
 - Direct inpainting with editing instruction
 - Much simpler pipeline
 
-**To compare fairly:**
-Use `--use_gt_mask` to use same masks as baseline methods.
+**Important distinction:**
+- **Editing process:** Uses SAM 3 to segment objects (default) or optionally GT masks for baseline comparison
+- **Evaluation process:** Uses GT masks to compute metrics (this is what GT masks are designed for)
 
 ---
 

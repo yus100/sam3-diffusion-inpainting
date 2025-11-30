@@ -11,14 +11,14 @@ pillow>=9.5.0
 
 # Diffusion models
 diffusers>=0.25.0
-transformers>=4.36.0
+transformers>=4.47.0
 accelerate>=0.25.0
 
 # Image processing
 opencv-python>=4.8.0
 
 # Optional optimizations
-xformers>=0.0.23  # For memory-efficient attention (NVIDIA GPUs only)
+#xformers>=0.0.23  # For memory-efficient attention (NVIDIA GPUs only)
 
 # Utilities
 tqdm>=4.66.0
@@ -26,3 +26,22 @@ safetensors>=0.4.0
 
 # PIE-Bench support
 pycocotools>=2.0.0  # For RLE mask decoding
+
+
+# tricky scientific deps – PIN THESE
+scipy>=1.11.2,<1.12
+scikit-image>=0.23.1,<0.24
+imageio>=2.33.0,<2.36.0
+
+
+# PnPInversion / InstructPix2Pix / evaluation extras
+einops
+k-diffusion
+omegaconf
+pandas
+lpips
+open-clip-torch
+matplotlib>=3.8.0
+
+# torchmetrics for eval
+torchmetrics[multimodal]>=1.4.0
