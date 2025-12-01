@@ -67,7 +67,7 @@ def load_sam3_model(model_id: str = "facebook/sam3", device: str = "cuda"):
     return model, processor, device
 
 
-
+# switch this out for LaMa
 def load_inpainting_model(model_id: str = "runwayml/stable-diffusion-inpainting", device: str = "cuda"):
     """Load Stable Diffusion Inpainting pipeline"""
     from diffusers import StableDiffusionInpaintPipeline
