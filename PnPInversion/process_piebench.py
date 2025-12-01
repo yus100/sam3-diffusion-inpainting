@@ -29,6 +29,9 @@ from typing import Dict, List, Optional
 import time
 from tqdm import tqdm
 import pycocotools.mask as mask_utils
+import torch
+from lama.saicinpainting.evaluation.data import pad_img_to_modulo
+
 
 
 # def load_sam3_model(checkpoint_path: str, device: str = "cuda"):
@@ -68,26 +71,28 @@ def load_sam3_model(model_id: str = "facebook/sam3", device: str = "cuda"):
 
 
 # switch this out for LaMa
-def load_inpainting_model(model_id: str = "runwayml/stable-diffusion-inpainting", device: str = "cuda"):
-    """Load Stable Diffusion Inpainting pipeline"""
-    from diffusers import StableDiffusionInpaintPipeline
-    
-    print(f"Loading SD Inpainting: {model_id}...")
-    pipe = StableDiffusionInpaintPipeline.from_pretrained(
-        model_id,
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        safety_checker=None,
-    )
-    pipe = pipe.to(device)
-    
-    # Enable optimizations
-    if device == "cuda":
-        try:
-            pipe.enable_xformers_memory_efficient_attention()
-        except:
-            pass
-    
-    return pipe
+def load_inpainting_model(
+    config_path: str = "./big-lama/config.yaml",
+    checkpoint_path: str = "./big-lama/models/best.ckpt",
+    device: str = "cuda"
+):
+    """
+    Load LaMa Inpainting model from config and checkpoint.
+    Paths are relative to the project root.
+    """
+    import yaml
+    from lama.saicinpainting.training.trainers import load_checkpoint
+    import os
+
+    config_path = os.path.abspath(config_path)
+    checkpoint_path = os.path.abspath(checkpoint_path)
+
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    checkpoint = load_checkpoint(config, checkpoint_path, device=device)
+    model = checkpoint['model']
+    model.eval()
+    return model
 
 
 def load_piebench_annotations(json_path: str) -> Dict:
@@ -207,7 +212,6 @@ def segment_with_sam3(
     return combined
 
 
-
 def process_piebench_image(
     image_id: str,
     annotation: Dict,
@@ -223,46 +227,23 @@ def process_piebench_image(
     guidance_scale: float = 7.5,
     seed: Optional[int] = None,
 ):
-    """
-    Process a single PIE-Bench image
+  
     
-    Args:
-        image_id: Image ID (e.g., "000000000000")
-        annotation: Annotation dict for this image
-        data_dir: PIE-Bench data directory
-        output_dir: Output directory
-        sam3_predictor: SAM 3 predictor
-        inpaint_pipeline: SD inpainting pipeline
-        use_sam3: If True, use SAM 3 segmentation (default and recommended)
-        use_gt_mask: If True, use ground truth mask from PIE-Bench (baseline only).
-                     Note: GT masks are primarily for evaluation, not for editing.
-        num_inference_steps: SD inference steps
-        guidance_scale: CFG scale
-        seed: Random seed
-    
-    Returns:
-        Result image
-    """
+
     # Load image
     image_path = os.path.join(data_dir, "annotation_images", annotation["image_path"])
     image = Image.open(image_path).convert("RGB")
     image_np = np.array(image)
-    
+
     # Get mask
     if use_gt_mask:
-        # Use ground truth mask from PIE-Bench (baseline comparison only)
-        # Note: GT masks are primarily intended for evaluation, not for editing
         mask = decode_rle_mask(annotation["mask"])
     else:
-        # Use SAM 3 segmentation (default and recommended workflow)
         if use_sam3:
-            # Extract object name from blended_word
             object_name = extract_edit_object(
                 annotation["editing_instruction"],
                 annotation["blended_word"]
             )
-            
-            # Segment with SAM 3
             mask = segment_with_sam3(
                 sam3_model=sam3_model,
                 sam3_processor=sam3_processor,
@@ -272,42 +253,30 @@ def process_piebench_image(
             )
         else:
             raise ValueError("Must use either SAM 3 or ground truth mask")
-    
-    # Convert mask to PIL
-    mask_pil = Image.fromarray((mask.astype(np.uint8) * 255))
-    
-    # Get editing prompt (use editing_instruction)
-    editing_prompt = annotation["editing_instruction"]
-    
-    # Set seed
-    generator = None
-    if seed is not None:
-        generator = torch.Generator(device=inpaint_pipeline.device).manual_seed(seed)
-    
-    # Inpaint
-    edited_image = inpaint_pipeline(
-        prompt=editing_prompt,
-        image=image,
-        mask_image=mask_pil,
-        num_inference_steps=num_inference_steps,
-        guidance_scale=guidance_scale,
-        generator=generator,
-    ).images[0]
 
-    # ---- Build 4-panel composite to match InstructPix2Pix ----
-    # 1) text panel: "edit prompt: <instruction>"
+    mask_pil = Image.fromarray((mask.astype(np.uint8) * 255))
+
+
+    mask_np = np.array(mask_pil) // 255  # binary mask
+    image_np, mask_np = pad_img_to_modulo(image_np, mask_np, 8)
+
+    if seed is not None:
+        torch.manual_seed(seed)
+
+    # Inpaint with LaMa
+    with torch.no_grad():
+        result = inpaint_pipeline(image=image_np, mask=mask_np)
+    # result is a numpy array (H, W, 3)
+    edited_image = Image.fromarray(result.astype(np.uint8))
+
+    editing_prompt = annotation["editing_instruction"]
     text_panel = txt_draw(f"edit prompt: {editing_prompt}")  # PIL.Image
 
-    # Convert everything to numpy arrays
-    text_np = np.array(text_panel)                 # [H, W, 3]
-    orig_np = np.array(image)                     # [H, W, 3]
-    edited_np = np.array(edited_image)            # [H, W, 3]
-
-    # Sanity: PIE-Bench images are 512x512, SD keeps size, txt_draw usually same height.
-    # Make a black spacer with same shape as text panel
+    text_np = np.array(text_panel)
+    orig_np = np.array(image)
+    edited_np = np.array(edited_image)
     black_np = np.zeros_like(text_np)
 
-    # Concatenate: [text | original | black | edited]
     composite_np = np.concatenate(
         (text_np, orig_np, black_np, edited_np),
         axis=1
